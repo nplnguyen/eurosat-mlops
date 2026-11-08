@@ -1,7 +1,7 @@
 # EuroSAT MLOps — Classification d'occupation des sols en production
 
 > Projet MLOps — M2 Data Engineering & IA  
-> Binôme : **NOM Prénom** & **NOM Prénom** — Année 2026-2027
+> Binôme : **NGUYEN Léon** & **DJEBAR Gaël** — Année 2026-2027
 
 Mise en production d'un modèle de **classification d'images satellites Sentinel-2**
 (jeu de données EuroSAT, 10 classes d'occupation des sols) : entraînement
