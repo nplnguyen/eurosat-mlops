@@ -35,7 +35,7 @@ def admin_create_user(body: UserCreate, _: AuthUser = Depends(require_admin)):
     try:
         user, key = create_user(body.name, body.email, body.is_admin, body.quota_per_minute)
     except IntegrityError:
-        raise HTTPException(status.HTTP_409_CONFLICT, "Nom d'utilisateur déjà pris")
+        raise HTTPException(status.HTTP_409_CONFLICT, "Nom d'utilisateur déjà pris") from None
     return _out(user, api_key=key)
 
 

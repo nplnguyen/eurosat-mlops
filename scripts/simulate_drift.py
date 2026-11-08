@@ -72,7 +72,9 @@ def main():
             print(f"{i + 1}/{a.n} envoyées ({ok} OK)")
 
     if ok == 0:
-        raise SystemExit(f"Aucune requête acceptée (dernier code HTTP {r.status_code} : {r.text[:120]}). Vérifiez la clé d'API.")
+        raise SystemExit(
+            f"Aucune requête acceptée (dernier code HTTP {r.status_code} : {r.text[:120]}). Vérifiez la clé d'API."
+        )
     report = requests.get(f"{a.url}/v1/drift", headers=headers, timeout=30).json()
     if not report.get("ready"):
         print(json.dumps(report, indent=2))
