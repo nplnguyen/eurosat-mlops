@@ -1,0 +1,18 @@
+[project]
+name = "eurosat-mlops"
+version = "1.0.0"
+description = "Mise en production d'un classifieur d'occupation des sols (EuroSAT) — projet MLOps M2"
+requires-python = ">=3.11"
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["api", "."]
+
+[tool.ruff]
+line-length = 120
+target-version = "py311"
+
+[tool.ruff.lint]
+select = ["E", "F", "B"]
+# B008 : Depends()/File() dans les signatures FastAPI ; B905 : zip() sur des tableaux de même taille
+ignore = ["B008", "B905", "E402", "E731"]

@@ -1,0 +1,7 @@
+apiVersion: 1
+providers:
+  - name: eurosat
+    folder: EuroSAT
+    type: file
+    options:
+      path: /var/lib/grafana/dashboards

@@ -1,0 +1,148 @@
+# Système complet EuroSAT MLOps — lancement en une commande :
+#     make up        (ou : docker compose up -d --build)
+#
+# Ports exposés sur l'hôte :
+#   80   passerelle (UI sur /, API sur /api, Swagger sur /api/docs)
+#   5001 MLflow (5000 est pris par AirPlay sur macOS), 3000 Grafana, 9090 Prometheus
+# En production (docker-compose.prod.yml) seuls 80/443 sont publics.
+
+x-api-env: &api-env
+  MODEL_SOURCE: mlflow
+  MODEL_NAME: eurosat-classifier
+  MODEL_VARIANT: ${MODEL_VARIANT:-int8}
+  MLFLOW_TRACKING_URI: http://mlflow:5000
+  DATABASE_URL: postgresql+psycopg://app:app@postgres:5432/app
+  REDIS_URL: redis://redis:6379/0
+  API_KEY_PEPPER: ${API_KEY_PEPPER:?définir API_KEY_PEPPER dans .env}
+  ADMIN_API_KEY: ${ADMIN_API_KEY:?définir ADMIN_API_KEY dans .env}
+  ROOT_PATH: /api
+  ORT_THREADS: ${ORT_THREADS:-2}
+  MODEL_REFRESH_SECONDS: 30
+
+services:
+  # ------------------------------------------------------------------ data
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-postgres}
+    volumes:
+      - pg-data:/var/lib/postgresql/data
+      - ./postgres/init.sql:/docker-entrypoint-initdb.d/init.sql:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d app"]
+      interval: 5s
+      retries: 20
+    restart: unless-stopped
+
+  redis:
+    image: redis:7-alpine
+    command: ["redis-server", "--save", "", "--maxmemory", "256mb", "--maxmemory-policy", "allkeys-lru"]
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+    restart: unless-stopped
+
+  # --------------------------------------------------------------- MLflow
+  mlflow:
+    build: {context: ., dockerfile: mlflow/Dockerfile}
+    image: ${REGISTRY:-local}/eurosat-mlflow:${IMAGE_TAG:-latest}
+    environment:
+      MLFLOW_BACKEND_STORE_URI: postgresql://mlflow:mlflow@postgres:5432/mlflow
+      # Artefacts (modèles ONNX, rapports) stockés dans un volume Docker.
+      # En cloud, on mettrait ici un bucket S3 / GCS (même code côté clients).
+      MLFLOW_ARTIFACTS_DESTINATION: /mlartifacts
+    volumes: [mlflow-artifacts:/mlartifacts]
+    depends_on:
+      postgres: {condition: service_healthy}
+    ports: ["${MLFLOW_PORT:-5001}:5000"]
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:5000/health')"]
+      interval: 10s
+      retries: 30
+    restart: unless-stopped
+
+  # Entraîne un premier modèle si le registre est vide (one-shot)
+  trainer:
+    build: {context: ., dockerfile: training/Dockerfile}
+    image: ${REGISTRY:-local}/eurosat-trainer:${IMAGE_TAG:-latest}
+    environment:
+      MLFLOW_TRACKING_URI: http://mlflow:5000
+      BOOTSTRAP_EPOCHS: ${BOOTSTRAP_EPOCHS:-3}
+      BOOTSTRAP_SUBSET: ${BOOTSTRAP_SUBSET:-0.3}
+    volumes: [dataset:/data]
+    depends_on:
+      mlflow: {condition: service_healthy}
+    shm_size: 1gb
+    restart: "no"
+
+  # ------------------------------------------------------------ inférence
+  api-stable:
+    build: {context: ., dockerfile: api/Dockerfile}
+    image: ${REGISTRY:-local}/eurosat-api:${IMAGE_TAG:-latest}
+    environment:
+      <<: *api-env
+      DEPLOYMENT_TRACK: stable
+      MODEL_ALIAS: champion
+    depends_on:
+      postgres: {condition: service_healthy}
+      redis: {condition: service_healthy}
+      mlflow: {condition: service_healthy}
+    restart: unless-stopped
+
+  api-canary:
+    build: {context: ., dockerfile: api/Dockerfile}  # même image que api-stable (cache)
+    image: ${REGISTRY:-local}/eurosat-api:${IMAGE_TAG:-latest}
+    environment:
+      <<: *api-env
+      DEPLOYMENT_TRACK: canary
+      MODEL_ALIAS: challenger
+      MODEL_FALLBACK_ALIAS: champion
+    depends_on:
+      api-stable: {condition: service_healthy}
+    restart: unless-stopped
+
+  gateway:
+    image: nginx:1.27-alpine
+    environment:
+      CANARY_WEIGHT: ${CANARY_WEIGHT:-10}
+    volumes:
+      - ./gateway/templates:/etc/nginx/templates:ro
+    ports: ["${GATEWAY_PORT:-80}:80"]
+    depends_on: [api-stable, api-canary, ui]
+    restart: unless-stopped
+
+  ui:
+    build: {context: ., dockerfile: ui/Dockerfile}
+    image: ${REGISTRY:-local}/eurosat-ui:${IMAGE_TAG:-latest}
+    environment:
+      API_URL: http://gateway/api
+    restart: unless-stopped
+
+  # ----------------------------------------------------------- monitoring
+  prometheus:
+    image: prom/prometheus:v2.55.0
+    volumes:
+      - ./monitoring/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - ./monitoring/alerts.yml:/etc/prometheus/alerts.yml:ro
+      - prom-data:/prometheus
+    ports: ["9090:9090"]
+    restart: unless-stopped
+
+  grafana:
+    image: grafana/grafana:11.3.0
+    environment:
+      GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_PASSWORD:-admin}
+      GF_DASHBOARDS_DEFAULT_HOME_DASHBOARD_PATH: /var/lib/grafana/dashboards/eurosat.json
+    volumes:
+      - ./monitoring/grafana/provisioning:/etc/grafana/provisioning:ro
+      - ./monitoring/grafana/dashboards:/var/lib/grafana/dashboards:ro
+    ports: ["3000:3000"]
+    depends_on: [prometheus]
+    restart: unless-stopped
+
+volumes:
+  pg-data:
+  mlflow-artifacts:
+  prom-data:
+  dataset:

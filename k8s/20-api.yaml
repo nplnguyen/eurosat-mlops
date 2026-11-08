@@ -1,0 +1,122 @@
+# Deux Deployments du même conteneur, qui ne diffèrent que par l'alias MLflow :
+#   api-stable  -> champion   (trafic principal, autoscalé par HPA)
+#   api-canary  -> challenger (petite fraction du trafic, via l'Ingress canary)
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: api-stable
+  namespace: eurosat
+  labels: {app: eurosat-api, track: stable}
+spec:
+  replicas: 2
+  strategy:
+    type: RollingUpdate
+    rollingUpdate: {maxSurge: 1, maxUnavailable: 0}
+  selector: {matchLabels: {app: eurosat-api, track: stable}}
+  template:
+    metadata:
+      labels: {app: eurosat-api, track: stable}
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "8000"
+        prometheus.io/path: /metrics/
+    spec:
+      securityContext: {runAsNonRoot: true, runAsUser: 1000}
+      containers:
+        - name: api
+          image: ghcr.io/OWNER/eurosat-api:latest
+          ports: [{containerPort: 8000, name: http}]
+          envFrom:
+            - configMapRef: {name: eurosat-api-config}
+            - secretRef: {name: eurosat-secrets}
+          env:
+            - {name: DEPLOYMENT_TRACK, value: stable}
+            - {name: MODEL_ALIAS, value: champion}
+          resources:
+            requests: {cpu: 500m, memory: 512Mi}
+            limits: {cpu: "1", memory: 1Gi}
+          readinessProbe:   # pas de trafic tant que le modèle n'est pas chargé
+            httpGet: {path: /health/ready, port: http}
+            periodSeconds: 5
+          livenessProbe:
+            httpGet: {path: /health, port: http}
+            initialDelaySeconds: 20
+            periodSeconds: 15
+          securityContext: {allowPrivilegeEscalation: false, readOnlyRootFilesystem: false}
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: api-canary
+  namespace: eurosat
+  labels: {app: eurosat-api, track: canary}
+spec:
+  replicas: 1
+  selector: {matchLabels: {app: eurosat-api, track: canary}}
+  template:
+    metadata:
+      labels: {app: eurosat-api, track: canary}
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "8000"
+        prometheus.io/path: /metrics/
+    spec:
+      securityContext: {runAsNonRoot: true, runAsUser: 1000}
+      containers:
+        - name: api
+          image: ghcr.io/OWNER/eurosat-api:latest
+          ports: [{containerPort: 8000, name: http}]
+          envFrom:
+            - configMapRef: {name: eurosat-api-config}
+            - secretRef: {name: eurosat-secrets}
+          env:
+            - {name: DEPLOYMENT_TRACK, value: canary}
+            - {name: MODEL_ALIAS, value: challenger}
+            - {name: MODEL_FALLBACK_ALIAS, value: champion}
+          resources:
+            requests: {cpu: 500m, memory: 512Mi}
+            limits: {cpu: "1", memory: 1Gi}
+          readinessProbe:
+            httpGet: {path: /health/ready, port: http}
+            periodSeconds: 5
+          livenessProbe:
+            httpGet: {path: /health, port: http}
+            initialDelaySeconds: 20
+---
+apiVersion: v1
+kind: Service
+metadata: {name: api-stable, namespace: eurosat}
+spec:
+  selector: {app: eurosat-api, track: stable}
+  ports: [{port: 80, targetPort: http}]
+---
+apiVersion: v1
+kind: Service
+metadata: {name: api-canary, namespace: eurosat}
+spec:
+  selector: {app: eurosat-api, track: canary}
+  ports: [{port: 80, targetPort: http}]
+---
+# Scaling horizontal automatique sur la charge CPU (l'inférence ONNX est CPU-bound)
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata: {name: api-stable, namespace: eurosat}
+spec:
+  scaleTargetRef: {apiVersion: apps/v1, kind: Deployment, name: api-stable}
+  minReplicas: 2
+  maxReplicas: 10
+  metrics:
+    - type: Resource
+      resource:
+        name: cpu
+        target: {type: Utilization, averageUtilization: 65}
+  behavior:
+    scaleDown:
+      stabilizationWindowSeconds: 120
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata: {name: api-stable, namespace: eurosat}
+spec:
+  minAvailable: 1
+  selector: {matchLabels: {app: eurosat-api, track: stable}}

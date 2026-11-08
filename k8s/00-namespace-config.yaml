@@ -1,0 +1,36 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: eurosat
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: eurosat-api-config
+  namespace: eurosat
+data:
+  MODEL_SOURCE: mlflow
+  MODEL_NAME: eurosat-classifier
+  MODEL_VARIANT: int8
+  MLFLOW_TRACKING_URI: http://mlflow:5000
+  REDIS_URL: redis://redis:6379/0
+  ORT_THREADS: "1"            # 1 thread / pod : on scale en pods plutôt qu'en threads
+  MODEL_REFRESH_SECONDS: "30"
+  ROOT_PATH: /api
+---
+# Secret d'exemple : en vrai, créer avec
+#   kubectl -n eurosat create secret generic eurosat-secrets \
+#     --from-literal=API_KEY_PEPPER=... --from-literal=ADMIN_API_KEY=... \
+#     --from-literal=DATABASE_URL=postgresql+psycopg://app:app@postgres:5432/app \
+#     --from-literal=POSTGRES_PASSWORD=...
+apiVersion: v1
+kind: Secret
+metadata:
+  name: eurosat-secrets
+  namespace: eurosat
+type: Opaque
+stringData:
+  API_KEY_PEPPER: change-me
+  ADMIN_API_KEY: eus_admin-change-me
+  DATABASE_URL: postgresql+psycopg://app:app@postgres:5432/app
+  POSTGRES_PASSWORD: postgres

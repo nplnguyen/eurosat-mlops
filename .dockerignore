@@ -1,0 +1,10 @@
+.git
+.env*
+data/
+mlruns/
+loadtest/
+infra/
+k8s/
+docs/
+tests/
+**/__pycache__

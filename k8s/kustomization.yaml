@@ -1,0 +1,15 @@
+# kubectl apply -k k8s/
+# (remplacer OWNER par votre utilisateur/organisation GitHub, ou :
+#  kustomize edit set image ghcr.io/OWNER/eurosat-api=ghcr.io/moi/eurosat-api:v1.2.0)
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+namespace: eurosat
+resources:
+  - 00-namespace-config.yaml
+  - 10-data.yaml
+  - 20-api.yaml
+  - 30-ui-ingress.yaml
+configMapGenerator:
+  - name: postgres-init
+    files: [init.sql=postgres-init.sql]  # copie de postgres/init.sql (kustomize interdit ../)
+    options: {disableNameSuffixHash: true}

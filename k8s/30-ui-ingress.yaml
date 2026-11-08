@@ -1,0 +1,79 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata: {name: ui, namespace: eurosat}
+spec:
+  replicas: 1
+  selector: {matchLabels: {app: ui}}
+  template:
+    metadata: {labels: {app: ui}}
+    spec:
+      containers:
+        - name: ui
+          image: ghcr.io/OWNER/eurosat-ui:latest
+          env:
+            - {name: API_URL, value: "http://api-stable"}
+          ports: [{containerPort: 8501}]
+          resources: {requests: {cpu: 100m, memory: 256Mi}}
+---
+apiVersion: v1
+kind: Service
+metadata: {name: ui, namespace: eurosat}
+spec:
+  selector: {app: ui}
+  ports: [{port: 80, targetPort: 8501}]
+---
+# Ingress principal (ingress-nginx)
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: eurosat
+  namespace: eurosat
+  annotations:
+    nginx.ingress.kubernetes.io/use-regex: "true"
+    nginx.ingress.kubernetes.io/rewrite-target: /$2
+    nginx.ingress.kubernetes.io/proxy-body-size: 50m
+spec:
+  ingressClassName: nginx
+  rules:
+    - http:
+        paths:
+          - path: /api(/|$)(.*)
+            pathType: ImplementationSpecific
+            backend: {service: {name: api-stable, port: {number: 80}}}
+---
+# Ingress canary : ingress-nginx envoie `canary-weight` % du trafic vers
+# api-canary ; le header `X-Canary: always` force le routage.
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: eurosat-canary
+  namespace: eurosat
+  annotations:
+    nginx.ingress.kubernetes.io/canary: "true"
+    nginx.ingress.kubernetes.io/canary-weight: "10"
+    nginx.ingress.kubernetes.io/canary-by-header: X-Canary
+    nginx.ingress.kubernetes.io/canary-by-header-value: always
+    nginx.ingress.kubernetes.io/use-regex: "true"
+    nginx.ingress.kubernetes.io/rewrite-target: /$2
+spec:
+  ingressClassName: nginx
+  rules:
+    - http:
+        paths:
+          - path: /api(/|$)(.*)
+            pathType: ImplementationSpecific
+            backend: {service: {name: api-canary, port: {number: 80}}}
+---
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: eurosat-ui
+  namespace: eurosat
+spec:
+  ingressClassName: nginx
+  rules:
+    - http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend: {service: {name: ui, port: {number: 80}}}

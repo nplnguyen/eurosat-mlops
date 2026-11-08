@@ -1,0 +1,6 @@
+# Les scripts shell et les fichiers montés dans les conteneurs Linux doivent
+# rester en LF, même si le dépôt est cloné sous Windows.
+* text=auto eol=lf
+*.png binary
+*.jpg binary
+*.pptx binary

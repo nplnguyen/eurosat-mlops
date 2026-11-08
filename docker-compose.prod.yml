@@ -1,0 +1,30 @@
+# Surcharge pour la VM de production :
+#   docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d
+#
+# - images pré-construites tirées depuis GHCR (pas de build sur la VM)
+# - services d'administration liés à 127.0.0.1 (accès via tunnel SSH)
+# - deux réplicas stables (scaling horizontal derrière nginx)
+
+services:
+  mlflow:
+    build: !reset null
+    ports: !override ["127.0.0.1:5000:5000"]
+  trainer:
+    build: !reset null
+  api-stable:
+    build: !reset null
+    deploy:
+      replicas: 2
+      resources:
+        limits: {cpus: "2", memory: 1g}
+  api-canary:
+    build: !reset null
+    deploy:
+      resources:
+        limits: {cpus: "2", memory: 1g}
+  ui:
+    build: !reset null
+  prometheus:
+    ports: !override ["127.0.0.1:9090:9090"]
+  grafana:
+    ports: !override ["127.0.0.1:3000:3000"]

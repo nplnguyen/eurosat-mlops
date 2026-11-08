@@ -1,0 +1,28 @@
+groups:
+  - name: eurosat
+    rules:
+      - alert: DataDriftDetected
+        expr: max by (track, model_version) (data_drift_detected) == 1
+        for: 5m
+        labels: {severity: warning}
+        annotations:
+          summary: "Data drift détecté sur {{ $labels.track }} (v{{ $labels.model_version }})"
+          description: "Envisager un ré-entraînement (make train) sur des données récentes."
+
+      - alert: HighErrorRate
+        expr: |
+          sum by (track) (rate(api_http_requests_total{status=~"5.."}[5m]))
+            / sum by (track) (rate(api_http_requests_total[5m])) > 0.05
+        for: 2m
+        labels: {severity: critical}
+        annotations:
+          summary: "Plus de 5 % d'erreurs 5xx sur {{ $labels.track }}"
+
+      - alert: CanaryLatencyRegression
+        expr: |
+          histogram_quantile(0.95, sum by (le) (rate(model_inference_seconds_bucket{track="canary"}[5m])))
+            > 1.5 * histogram_quantile(0.95, sum by (le) (rate(model_inference_seconds_bucket{track="stable"}[5m])))
+        for: 5m
+        labels: {severity: warning}
+        annotations:
+          summary: "La latence p95 du canary dépasse de 50 % celle du stable"
