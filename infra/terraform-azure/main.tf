@@ -26,7 +26,7 @@ provider "azurerm" {
 }
 
 locals {
-  name = "eurosat"
+  name = "eurosatgwc"
   tags = { project = "eurosat-mlops", managed_by = "terraform" }
 }
 
