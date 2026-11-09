@@ -54,6 +54,8 @@ jobs:
   deploy:
     runs-on: ubuntu-latest
     needs: push-images
+    # Activé seulement quand une VM existe (variable de dépôt DEPLOY_ENABLED=true)
+    if: vars.DEPLOY_ENABLED == 'true'
     environment: production
     steps:
       - uses: actions/checkout@v4

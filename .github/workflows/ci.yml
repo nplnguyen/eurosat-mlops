@@ -39,6 +39,12 @@ jobs:
           terraform fmt -check
           terraform init -backend=false
           terraform validate
+      - name: terraform fmt / validate (Azure)
+        working-directory: infra/terraform-azure
+        run: |
+          terraform fmt -check
+          terraform init -backend=false
+          terraform validate
       - name: kustomize build
         run: kubectl kustomize k8s > /dev/null
 
