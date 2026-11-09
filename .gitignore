@@ -13,3 +13,8 @@ infra/terraform/.terraform/
 infra/terraform/*.tfstate*
 infra/terraform/terraform.tfvars
 .venv*/
+.env.vm
+infra/terraform-azure/.terraform/
+infra/terraform-azure/*.tfstate*
+infra/terraform-azure/terraform.tfvars
+infra/terraform-azure/.terraform.lock.hcl
